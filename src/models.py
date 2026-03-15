@@ -15,29 +15,19 @@ torch.manual_seed(SEED)
 # MLP MODEL
 # ─────────────────────────────────────────────────────────────────────────────
 class IDSModel(nn.Module):
-    """
-    Multilayer Perceptron for binary intrusion detection.
-    
-    Architecture:
-        Input(42) → Dense(256) + BN + ReLU + Dropout(0.3)
-                  → Dense(128) + BN + ReLU + Dropout(0.3)
-                  → Dense(64)  + ReLU
-                  → Dense(2)   → output (Normal or Attack)
-    """
-
     def __init__(self, input_dim: int = 42, num_classes: int = 2):
         super(IDSModel, self).__init__()
 
         self.network = nn.Sequential(
             # Layer 1
             nn.Linear(input_dim, 256),
-            nn.BatchNorm1d(256),
+            nn.GroupNorm(8, 256),
             nn.ReLU(),
             nn.Dropout(0.3),
 
             # Layer 2
             nn.Linear(256, 128),
-            nn.BatchNorm1d(128),
+            nn.GroupNorm(8, 128),
             nn.ReLU(),
             nn.Dropout(0.3),
 

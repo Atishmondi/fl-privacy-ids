@@ -152,11 +152,10 @@ def noniid_split(X, y, num_clients=NUM_CLIENTS, alpha=0.5):
 # 4. CREATE DATALOADERS
 # ─────────────────────────────────────────────────────────────────────────────
 def make_dataloader(X, y, batch_size=BATCH_SIZE, shuffle=True):
-    """Convert numpy arrays to a PyTorch DataLoader."""
     X_tensor = torch.tensor(X, dtype=torch.float32)
     y_tensor = torch.tensor(y, dtype=torch.long)
     dataset  = TensorDataset(X_tensor, y_tensor)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True)
 
 
 def make_client_loaders(clients, batch_size=BATCH_SIZE):
