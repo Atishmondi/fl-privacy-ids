@@ -19,7 +19,7 @@ from src.fl_algorithms.fednova import run_fednova
 # ── Config ────────────────────────────────────────────────────────────────────
 NUM_ROUNDS        = 100
 CLIENTS_PER_ROUND = 10
-LOCAL_EPOCHS      = 10
+LOCAL_EPOCHS      = 5
 ALPHA_VALUES      = [1.0, 0.5, 0.1]  # high → low (easy → hard)
 
 
@@ -45,7 +45,6 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     )
     summary = tracker.summary()
     summary["alpha"]      = alpha
-    summary["type"]       = "federated"
     summary["train_time"] = round(time.time() - start, 2)
     summaries.append(summary)
 
@@ -63,7 +62,6 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     )
     summary = tracker.summary()
     summary["alpha"]      = alpha
-    summary["type"]       = "federated"
     summary["train_time"] = round(time.time() - start, 2)
     summaries.append(summary)
 
@@ -81,7 +79,6 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     )
     summary = tracker.summary()
     summary["alpha"]      = alpha
-    summary["type"]       = "federated"
     summary["train_time"] = round(time.time() - start, 2)
     summaries.append(summary)
 
@@ -99,7 +96,6 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     )
     summary = tracker.summary()
     summary["alpha"]      = alpha
-    summary["type"]       = "federated"
     summary["train_time"] = round(time.time() - start, 2)
     summaries.append(summary)
 

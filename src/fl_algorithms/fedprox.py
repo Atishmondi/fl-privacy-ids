@@ -26,8 +26,8 @@ torch.manual_seed(SEED)
 # ── Defaults ──────────────────────────────────────────────────────────────────
 NUM_ROUNDS        = 100
 CLIENTS_PER_ROUND = 10
-LOCAL_EPOCHS      = 10
-LEARNING_RATE     = 0.001
+LOCAL_EPOCHS      = 5
+LEARNING_RATE     = 0.0005
 MU                = 0.01   # proximal term strength
 
 

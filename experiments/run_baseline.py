@@ -1,4 +1,4 @@
-"""
+ff"""
 run_baseline.py — FL-Privacy-IDS
 Experiment 1: Baseline FL comparison (IID data, 100 rounds)
 Runs all 4 algorithms and saves results for paper.
@@ -28,7 +28,7 @@ import os
 # ── Config ────────────────────────────────────────────────────────────────────
 NUM_ROUNDS        = 100
 CLIENTS_PER_ROUND = 10
-LOCAL_EPOCHS      = 10
+LOCAL_EPOCHS      = 5
 EXPERIMENT        = "baseline_iid"
 
 
