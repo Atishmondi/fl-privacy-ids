@@ -1,4 +1,4 @@
-ff"""
+"""
 run_baseline.py — FL-Privacy-IDS
 Experiment 1: Baseline FL comparison (IID data, 100 rounds)
 Runs all 4 algorithms and saves results for paper.

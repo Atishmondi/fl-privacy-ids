@@ -135,19 +135,32 @@ class ResultTracker:
         return -1  # never reached threshold
 
     def summary(self) -> dict:
-        """Return a summary of the experiment results."""
-        if not self.history:
-            return {}
-        best = max(self.history, key=lambda x: x["accuracy"])
-        return {
-            "algorithm"         : self.algorithm,
-            "experiment"        : self.experiment,
-            "best_accuracy"     : best["accuracy"],
-            "best_f1"           : best["f1"],
-            "best_round"        : best["round"],
-            "convergence_round" : self.get_convergence_round(),
-            "total_rounds"      : len(self.history),
-        }
+    if not self.history:
+        return {}
+
+    # Composite score — weighted combination of all metrics
+    for entry in self.history:
+        entry["composite"] = round(
+            0.30 * entry["f1"] +
+            0.25 * entry["precision"] +
+            0.25 * entry["recall"] +
+            0.20 * entry["accuracy"],
+            4
+        )
+
+    best = max(self.history, key=lambda x: x["composite"])
+    return {
+        "algorithm"         : self.algorithm,
+        "experiment"        : self.experiment,
+        "best_accuracy"     : best["accuracy"],
+        "best_f1"           : best["f1"],
+        "best_precision"    : best["precision"],
+        "best_recall"       : best["recall"],
+        "best_composite"    : best["composite"],
+        "best_round"        : best["round"],
+        "convergence_round" : self.get_convergence_round(),
+        "total_rounds"      : len(self.history),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
