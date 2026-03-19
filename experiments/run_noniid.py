@@ -32,7 +32,7 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     summaries  = []
 
     # FedAvg
-    print(f"\n  [1/4] FedAvg (α={alpha})...")
+    print(f"\n  [1/4] FedAvg (alpha={alpha})...")
     start = time.time()
     tracker = run_fedavg(
         client_loaders    = client_loaders,
@@ -49,7 +49,7 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     summaries.append(summary)
 
     # FedProx
-    print(f"\n  [2/4] FedProx (α={alpha})...")
+    print(f"\n  [2/4] FedProx (alpha={alpha})...")
     start = time.time()
     tracker = run_fedprox(
         client_loaders    = client_loaders,
@@ -66,7 +66,7 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     summaries.append(summary)
 
     # FedOpt
-    print(f"\n  [3/4] FedOpt (α={alpha})...")
+    print(f"\n  [3/4] FedOpt (alpha={alpha})...")
     start = time.time()
     tracker = run_fedopt(
         client_loaders    = client_loaders,
@@ -83,7 +83,7 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     summaries.append(summary)
 
     # FedNova
-    print(f"\n  [4/4] FedNova (α={alpha})...")
+    print(f"\n  [4/4] FedNova (alpha={alpha})...")
     start = time.time()
     tracker = run_fednova(
         client_loaders    = client_loaders,
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     print(f"Clients/round: {CLIENTS_PER_ROUND}")
     print(f"Local epochs : {LOCAL_EPOCHS}")
 
-    start_total = time.time()
+    start_total   = time.time()
     all_summaries = []
 
     for alpha in ALPHA_VALUES:
@@ -122,13 +122,11 @@ if __name__ == "__main__":
         print(f"Non-IID Alpha = {alpha}")
         print(f"{'='*60}")
 
-        # Load Non-IID data for this alpha
-        print(f"Loading Non-IID data (α={alpha})...")
+        print(f"Loading Non-IID data (alpha={alpha})...")
         client_loaders, test_loader, input_dim = get_fl_data(
             mode="noniid", alpha=alpha
         )
 
-        # Run all 4 algorithms
         summaries = run_all_algorithms(
             client_loaders, test_loader, input_dim, alpha
         )
@@ -142,11 +140,14 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("EXPERIMENT 2 RESULTS")
     print("=" * 60)
-    print(f"{'Algorithm':<12} {'Alpha':>6} {'Accuracy':>10} {'F1':>10}")
-    print("-" * 45)
+    print(f"{'Algorithm':<12} {'Alpha':>6} {'Accuracy':>10} {'F1':>10} {'Composite':>11} {'Best Rnd':>9}")
+    print("-" * 65)
     for s in all_summaries:
         print(f"{s['algorithm']:<12} {s['alpha']:>6} "
-              f"{s['best_accuracy']:>9.4f}% {s['best_f1']:>9.4f}%")
+              f"{s['best_accuracy']:>9.4f}% "
+              f"{s['best_f1']:>9.4f}% "
+              f"{s['best_composite']:>10.4f}% "
+              f"{s['best_round']:>9}")
 
     print(f"\nTotal time: {total_time}s")
     print("\nExperiment 2 complete! Results saved to results/")

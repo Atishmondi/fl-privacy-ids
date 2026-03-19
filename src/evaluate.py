@@ -24,10 +24,24 @@ SEED = 42
 torch.manual_seed(SEED)
 
 # ── Results directory ─────────────────────────────────────────────────────────
-RESULTS_DIR  = "results"
-FIGURES_DIR  = os.path.join(RESULTS_DIR, "figures")
+RESULTS_DIR = "results"
+FIGURES_DIR = os.path.join(RESULTS_DIR, "figures")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(FIGURES_DIR, exist_ok=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPOSITE SCORE
+# ─────────────────────────────────────────────────────────────────────────────
+def composite_score(accuracy: float, f1: float, precision: float, recall: float) -> float:
+    """
+    Weighted composite score for selecting the best round.
+    Fairer than accuracy alone on slightly imbalanced datasets.
+
+    composite = 0.30*F1 + 0.25*Precision + 0.25*Recall + 0.20*Accuracy
+    All inputs and output are in percentage (0-100 scale).
+    """
+    return round(0.30 * f1 + 0.25 * precision + 0.25 * recall + 0.20 * accuracy, 4)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -38,7 +52,7 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device) -> 
     Evaluate model on a DataLoader.
 
     Returns:
-        dict with accuracy, f1, precision, recall, loss
+        dict with accuracy, f1, precision, recall, loss, composite
     """
     model.eval()
     all_preds  = []
@@ -62,12 +76,18 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device) -> 
     all_preds  = np.array(all_preds)
     all_labels = np.array(all_labels)
 
+    acc  = round(accuracy_score(all_labels, all_preds) * 100, 4)
+    f1   = round(f1_score(all_labels, all_preds, average="weighted") * 100, 4)
+    prec = round(precision_score(all_labels, all_preds, average="weighted", zero_division=0) * 100, 4)
+    rec  = round(recall_score(all_labels, all_preds, average="weighted", zero_division=0) * 100, 4)
+
     metrics = {
-        "accuracy"  : round(accuracy_score(all_labels, all_preds) * 100, 4),
-        "f1"        : round(f1_score(all_labels, all_preds, average="weighted") * 100, 4),
-        "precision" : round(precision_score(all_labels, all_preds, average="weighted", zero_division=0) * 100, 4),
-        "recall"    : round(recall_score(all_labels, all_preds, average="weighted", zero_division=0) * 100, 4),
+        "accuracy"  : acc,
+        "f1"        : f1,
+        "precision" : prec,
+        "recall"    : rec,
         "loss"      : round(total_loss / len(dataloader), 4),
+        "composite" : composite_score(acc, f1, prec, rec),
     }
     return metrics
 
@@ -78,12 +98,13 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device) -> 
 class ResultTracker:
     """
     Tracks metrics across FL rounds and saves results to CSV.
+    Best round is selected by composite score, not accuracy alone.
     """
 
     def __init__(self, algorithm: str, experiment: str):
         self.algorithm  = algorithm
         self.experiment = experiment
-        self.history    = []  # list of dicts per round
+        self.history    = []
         self.timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     def log(self, round_num: int, metrics: dict, extra: dict = None):
@@ -98,10 +119,10 @@ class ResultTracker:
             entry.update(extra)
         self.history.append(entry)
 
-        # Print progress
         print(f"  Round {round_num:03d} | "
               f"Acc: {metrics['accuracy']:.2f}% | "
               f"F1: {metrics['f1']:.2f}% | "
+              f"Composite: {metrics['composite']:.2f}% | "
               f"Loss: {metrics['loss']:.4f}")
 
     def save(self) -> str:
@@ -121,6 +142,12 @@ class ResultTracker:
         print(f"Results saved to {filepath}")
         return filepath
 
+    def get_best_composite(self) -> float:
+        """Return the best composite score achieved across all rounds."""
+        if not self.history:
+            return 0.0
+        return max(entry["composite"] for entry in self.history)
+
     def get_best_accuracy(self) -> float:
         """Return the best accuracy achieved across all rounds."""
         if not self.history:
@@ -132,18 +159,25 @@ class ResultTracker:
         for entry in self.history:
             if entry["accuracy"] >= threshold:
                 return entry["round"]
-        return -1  # never reached threshold
+        return -1
 
     def summary(self) -> dict:
-        """Return a summary of the experiment results."""
+        """
+        Return a summary of the experiment results.
+        Best round is chosen by composite score.
+        """
         if not self.history:
             return {}
-        best = max(self.history, key=lambda x: x["accuracy"])
+
+        best = max(self.history, key=lambda x: x["composite"])
         return {
             "algorithm"         : self.algorithm,
             "experiment"        : self.experiment,
             "best_accuracy"     : best["accuracy"],
             "best_f1"           : best["f1"],
+            "best_precision"    : best["precision"],
+            "best_recall"       : best["recall"],
+            "best_composite"    : best["composite"],
             "best_round"        : best["round"],
             "convergence_round" : self.get_convergence_round(),
             "total_rounds"      : len(self.history),
@@ -156,11 +190,10 @@ class ResultTracker:
 def compute_comm_cost(model: nn.Module, clients_per_round: int) -> float:
     """
     Estimate communication cost per round in MB.
-    Each selected client receives and sends the model once.
-    Cost = model_size × clients_per_round × 2 (send + receive)
+    Cost = model_size x clients_per_round x 2 (send + receive)
     """
     total_params = sum(p.numel() for p in model.parameters())
-    size_mb      = (total_params * 4) / (1024 * 1024)  # float32
+    size_mb      = (total_params * 4) / (1024 * 1024)
     return round(size_mb * clients_per_round * 2, 4)
 
 
@@ -192,36 +225,41 @@ if __name__ == "__main__":
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Device: {device}")
 
-    # Load data
     client_loaders, test_loader, input_dim = get_fl_data(mode="iid")
 
-    # Create untrained model
     model = get_model(input_dim=input_dim).to(device)
 
-    # Evaluate untrained model (should be ~50% random)
     print("\nEvaluating untrained model (expect ~50% accuracy)...")
     metrics = evaluate(model, test_loader, device)
     print(f"Metrics: {metrics}")
+    assert "composite" in metrics, "composite key missing from metrics!"
+    assert "precision" in metrics, "precision key missing from metrics!"
+    assert "recall"    in metrics, "recall key missing from metrics!"
 
-    # Test ResultTracker
-    print("\nTesting ResultTracker...")
+    print("\nTesting ResultTracker (composite-based best round)...")
     tracker = ResultTracker(algorithm="FedAvg", experiment="baseline")
-    for r in range(1, 4):
-        fake_metrics = {
-            "accuracy" : 80.0 + r * 2,
-            "f1"       : 79.0 + r * 2,
-            "precision": 80.0 + r * 2,
-            "recall"   : 79.0 + r * 2,
-            "loss"     : 0.5  - r * 0.05,
-        }
-        tracker.log(round_num=r, metrics=fake_metrics)
+    # Round 2 has lower accuracy but higher F1/precision/recall
+    # so composite should pick round 2 as best
+    fake_rounds = [
+        {"accuracy": 86.0, "f1": 79.0, "precision": 80.0, "recall": 79.0, "loss": 0.45},
+        {"accuracy": 84.0, "f1": 85.0, "precision": 86.0, "recall": 85.0, "loss": 0.40},
+        {"accuracy": 85.0, "f1": 82.0, "precision": 83.0, "recall": 82.0, "loss": 0.42},
+    ]
+    for r, m in enumerate(fake_rounds, start=1):
+        m["composite"] = composite_score(m["accuracy"], m["f1"], m["precision"], m["recall"])
+        tracker.log(round_num=r, metrics=m)
+
+    summary = tracker.summary()
+    print(f"\nSummary: {summary}")
+    assert "best_precision" in summary, "best_precision missing from summary!"
+    assert "best_recall"    in summary, "best_recall missing from summary!"
+    assert "best_composite" in summary, "best_composite missing from summary!"
+    assert summary["best_round"] == 2,  "Best round should be 2 (highest composite)!"
+    print("Best round correctly selected by composite score.")
 
     filepath = tracker.save()
-    print(f"Best accuracy : {tracker.get_best_accuracy()}%")
-    print(f"Summary       : {tracker.summary()}")
 
-    # Test communication cost
     comm_cost = compute_comm_cost(model, clients_per_round=10)
-    print(f"\nComm cost per round : {comm_cost} MB")
+    print(f"\nComm cost per round: {comm_cost} MB")
 
-    print("\n🎉 evaluate.py is working correctly!")
+    print("\nevaluate.py is working correctly!")
