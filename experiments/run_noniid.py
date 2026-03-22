@@ -20,7 +20,7 @@ from src.fl_algorithms.fednova import run_fednova
 NUM_ROUNDS        = 100
 CLIENTS_PER_ROUND = 10
 LOCAL_EPOCHS      = 5
-ALPHA_VALUES      = [0.5]  # high → low (easy → hard)
+ALPHA_VALUES      = [0.1]  # high → low (easy → hard)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
