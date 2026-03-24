@@ -85,7 +85,7 @@ def local_train_nova(
             delta = local_weights[key].float() - global_weights[key].float()
             normalized_update[key] = delta / tau
 
-    avg_loss = total_loss / tau
+    avg_loss = total_loss / tau if tau > 0 else 0.0
     return normalized_update, num_samples, tau, avg_loss
 
 

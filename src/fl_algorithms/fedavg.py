@@ -65,7 +65,8 @@ def local_train(
             optimizer.step()
             total_loss += loss.item()
 
-    avg_loss = total_loss / (local_epochs * len(dataloader))
+    num_batches = local_epochs * len(dataloader)
+    avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
     return get_model_weights(model), num_samples, avg_loss
 
 
