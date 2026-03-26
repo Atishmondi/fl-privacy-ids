@@ -23,7 +23,7 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
-NUM_ROUNDS        = 100
+NUM_ROUNDS        = 150
 CLIENTS_PER_ROUND = 10
 LOCAL_EPOCHS      = 5
 LEARNING_RATE     = 0.0005
@@ -48,8 +48,8 @@ def local_train(
     """
     model = model.to(device)
     model.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
+    optimizer  = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    criterion  = nn.CrossEntropyLoss()
     total_loss = 0.0
     num_samples = len(dataloader.dataset)
 
@@ -66,7 +66,7 @@ def local_train(
             total_loss += loss.item()
 
     num_batches = local_epochs * len(dataloader)
-    avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+    avg_loss    = total_loss / num_batches if num_batches > 0 else 0.0
     return get_model_weights(model), num_samples, avg_loss
 
 
@@ -79,7 +79,7 @@ def aggregate(client_weights: list, client_sizes: list) -> dict:
 
     global_w = Σ (n_i / N) × w_i
     """
-    total_samples = sum(client_sizes)
+    total_samples  = sum(client_sizes)
     global_weights = copy.deepcopy(client_weights[0])
 
     for key in global_weights:
@@ -125,10 +125,9 @@ def run_fedavg(
     Returns:
         ResultTracker with full training history
     """
-    device  = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device  = torch.device("cpu")
     tracker = ResultTracker(algorithm="FedAvg", experiment=experiment)
 
-    # Initialize global model
     global_model = get_model(input_dim=input_dim).to(device)
     comm_cost    = compute_comm_cost(global_model, clients_per_round)
 
@@ -141,13 +140,11 @@ def run_fedavg(
         print(f"{'='*60}")
 
     for round_num in range(1, num_rounds + 1):
-        # Select random clients
         selected = random.sample(range(len(client_loaders)), clients_per_round)
 
         client_weights = []
         client_sizes   = []
 
-        # Local training on each selected client
         for client_id in selected:
             local_model = get_model(input_dim=input_dim)
             local_model = set_model_weights(local_model, copy.deepcopy(
@@ -162,11 +159,9 @@ def run_fedavg(
             client_weights.append(weights)
             client_sizes.append(size)
 
-        # Aggregate
         global_weights = aggregate(client_weights, client_sizes)
         global_model   = set_model_weights(global_model, global_weights)
 
-        # Evaluate every 5 rounds and at round 1
         if round_num == 1 or round_num % 5 == 0:
             metrics = evaluate(global_model, test_loader, device)
             tracker.log(
@@ -175,7 +170,6 @@ def run_fedavg(
                 extra={"comm_cost_mb": comm_cost * round_num},
             )
 
-    # Save results
     tracker.save()
 
     if verbose:
@@ -189,7 +183,7 @@ def run_fedavg(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# QUICK TEST — 3 rounds only to verify it works
+# QUICK TEST
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import sys
@@ -203,14 +197,14 @@ if __name__ == "__main__":
     client_loaders, test_loader, input_dim = get_fl_data(mode="iid")
 
     tracker = run_fedavg(
-        client_loaders   = client_loaders,
-        test_loader      = test_loader,
-        input_dim        = input_dim,
-        num_rounds       = 3,
-        clients_per_round= 5,
-        local_epochs     = 2,
-        experiment       = "test",
+        client_loaders    = client_loaders,
+        test_loader       = test_loader,
+        input_dim         = input_dim,
+        num_rounds        = 3,
+        clients_per_round = 5,
+        local_epochs      = 2,
+        experiment        = "test",
     )
 
     print(f"\nBest accuracy in 3 rounds: {tracker.get_best_accuracy()}%")
-    print("\n🎉 fedavg.py is working correctly!")
+    print("\nfedavg.py is working correctly!")

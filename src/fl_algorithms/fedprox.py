@@ -24,11 +24,11 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
-NUM_ROUNDS        = 100
+NUM_ROUNDS        = 150
 CLIENTS_PER_ROUND = 10
 LOCAL_EPOCHS      = 5
 LEARNING_RATE     = 0.0005
-MU                = 0.01   # proximal term strength
+MU                = 0.01
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -47,20 +47,16 @@ def local_train_prox(
     Train locally with FedProx proximal term.
 
     Loss = CrossEntropy + (mu/2) * ||w - w_global||^2
-
-    The proximal term penalizes the local model for drifting
-    too far from the global model — key for Non-IID stability.
     """
-    model       = model.to(device)
-    global_model= global_model.to(device)
+    model        = model.to(device)
+    global_model = global_model.to(device)
     model.train()
 
-    optimizer  = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion  = nn.CrossEntropyLoss()
-    total_loss = 0.0
-    num_samples= len(dataloader.dataset)
+    optimizer   = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    criterion   = nn.CrossEntropyLoss()
+    total_loss  = 0.0
+    num_samples = len(dataloader.dataset)
 
-    # Freeze global model weights for proximal term computation
     global_weights = {k: v.detach().clone() for k, v in global_model.named_parameters()}
 
     for epoch in range(local_epochs):
@@ -69,26 +65,22 @@ def local_train_prox(
             y_batch = y_batch.to(device)
 
             optimizer.zero_grad()
-            output = model(X_batch)
-
-            # Standard cross entropy loss
+            output  = model(X_batch)
             ce_loss = criterion(output, y_batch)
 
-            # Proximal term — penalize drift from global model
             prox_term = 0.0
             for name, param in model.named_parameters():
                 if name in global_weights:
                     prox_term += torch.norm(param - global_weights[name]) ** 2
             prox_loss = (mu / 2) * prox_term
 
-            # Total loss
             loss = ce_loss + prox_loss
             loss.backward()
             optimizer.step()
-            total_loss += ce_loss.item()  # track only CE loss for comparison
+            total_loss += ce_loss.item()
 
     num_batches = local_epochs * len(dataloader)
-    avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+    avg_loss    = total_loss / num_batches if num_batches > 0 else 0.0
     return get_model_weights(model), num_samples, avg_loss
 
 
@@ -108,44 +100,27 @@ def run_fedprox(
 ) -> ResultTracker:
     """
     Full FedProx training loop.
-
-    Args:
-        client_loaders   : list of DataLoaders (one per client)
-        test_loader      : global test DataLoader
-        input_dim        : number of input features
-        num_rounds       : total FL rounds
-        clients_per_round: clients selected per round
-        local_epochs     : local training epochs per round
-        mu               : proximal term coefficient
-        experiment       : experiment name for result tracking
-        verbose          : print progress
-
-    Returns:
-        ResultTracker with full training history
     """
-    device  = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device  = torch.device("cpu")
     tracker = ResultTracker(algorithm="FedProx", experiment=experiment)
 
-    # Initialize global model
     global_model = get_model(input_dim=input_dim).to(device)
     comm_cost    = compute_comm_cost(global_model, clients_per_round)
 
     if verbose:
         print(f"\n{'='*60}")
-        print(f"FedProx | Experiment: {experiment} | μ={mu}")
+        print(f"FedProx | Experiment: {experiment} | mu={mu}")
         print(f"Rounds: {num_rounds} | Clients/round: {clients_per_round}")
         print(f"Local epochs: {local_epochs} | Device: {device}")
         print(f"Comm cost/round: {comm_cost} MB")
         print(f"{'='*60}")
 
     for round_num in range(1, num_rounds + 1):
-        # Select random clients
         selected = random.sample(range(len(client_loaders)), clients_per_round)
 
         client_weights = []
         client_sizes   = []
 
-        # Local training with proximal term
         for client_id in selected:
             local_model = get_model(input_dim=input_dim)
             local_model = set_model_weights(local_model, copy.deepcopy(
@@ -162,11 +137,9 @@ def run_fedprox(
             client_weights.append(weights)
             client_sizes.append(size)
 
-        # Aggregate — same as FedAvg
         global_weights = aggregate(client_weights, client_sizes)
         global_model   = set_model_weights(global_model, global_weights)
 
-        # Evaluate every 5 rounds and at round 1
         if round_num == 1 or round_num % 5 == 0:
             metrics = evaluate(global_model, test_loader, device)
             tracker.log(
@@ -175,7 +148,6 @@ def run_fedprox(
                 extra={"comm_cost_mb": comm_cost * round_num, "mu": mu},
             )
 
-    # Save results
     tracker.save()
 
     if verbose:
@@ -189,7 +161,7 @@ def run_fedprox(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# QUICK TEST — 3 rounds only
+# QUICK TEST
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import sys
@@ -214,4 +186,4 @@ if __name__ == "__main__":
     )
 
     print(f"\nBest accuracy in 3 rounds: {tracker.get_best_accuracy()}%")
-    print("\n🎉 fedprox.py is working correctly!")
+    print("\nfedprox.py is working correctly!")

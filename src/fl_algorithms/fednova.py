@@ -24,7 +24,7 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
-NUM_ROUNDS        = 100
+NUM_ROUNDS        = 150
 CLIENTS_PER_ROUND = 10
 LOCAL_EPOCHS      = 5
 LEARNING_RATE     = 0.0005
@@ -45,19 +45,19 @@ def local_train_nova(
     Train locally and return normalized gradient update.
 
     FedNova key idea:
-    - tau = total local steps (epochs × batches)
+    - tau = total local steps (epochs x batches)
     - normalized_update = (w_local - w_global) / tau
-    - This ensures all clients contribute equally regardless
-      of how many local steps they took
+    - tau=0 guard: if client has no batches, return zero update
     """
     model = model.to(device)
     model.train()
 
+    # FedNova uses SGD with momentum as per original paper
     optimizer   = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
     criterion   = nn.CrossEntropyLoss()
     total_loss  = 0.0
     num_samples = len(dataloader.dataset)
-    tau         = 0  # local step counter
+    tau         = 0
 
     for epoch in range(local_epochs):
         for X_batch, y_batch in dataloader:
@@ -71,19 +71,21 @@ def local_train_nova(
             optimizer.step()
 
             total_loss += loss.item()
-            tau        += 1  # count each gradient step
+            tau        += 1
 
-    # Get local weights after training
     local_weights = get_model_weights(model)
 
-    # Compute normalized update: delta_i / tau_i
+    # tau=0 guard — client had no batches, return zero update
     normalized_update = {}
     for key in local_weights:
         if local_weights[key].dtype == torch.long:
             normalized_update[key] = local_weights[key].clone()
         else:
-            delta = local_weights[key].float() - global_weights[key].float()
-            normalized_update[key] = delta / tau
+            if tau > 0:
+                delta = local_weights[key].float() - global_weights[key].float()
+                normalized_update[key] = delta / tau
+            else:
+                normalized_update[key] = torch.zeros_like(local_weights[key].float())
 
     avg_loss = total_loss / tau if tau > 0 else 0.0
     return normalized_update, num_samples, tau, avg_loss
@@ -102,18 +104,14 @@ def aggregate_nova(
     FedNova aggregation:
     global_update = Σ (n_i/N) * tau_eff * normalized_update_i
     new_global    = global + global_update
-
-    tau_eff = effective local steps (weighted average of tau values)
     """
     total_samples = sum(client_sizes)
 
-    # Compute effective tau (weighted average)
     tau_eff = sum(
         (size / total_samples) * tau
         for size, tau in zip(client_sizes, tau_list)
     )
 
-    # Weighted sum of normalized updates
     global_update = {}
     for key in global_weights:
         if global_weights[key].dtype == torch.long:
@@ -128,7 +126,6 @@ def aggregate_nova(
                 continue
             global_update[key] += weight * update[key].float()
 
-    # Apply update to global model
     new_global_weights = {}
     for key in global_weights:
         if global_weights[key].dtype == torch.long:
@@ -156,24 +153,10 @@ def run_fednova(
 ) -> ResultTracker:
     """
     Full FedNova training loop.
-
-    Args:
-        client_loaders   : list of DataLoaders (one per client)
-        test_loader      : global test DataLoader
-        input_dim        : number of input features
-        num_rounds       : total FL rounds
-        clients_per_round: clients selected per round
-        local_epochs     : local training epochs per round
-        experiment       : experiment name for result tracking
-        verbose          : print progress
-
-    Returns:
-        ResultTracker with full training history
     """
-    device  = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device  = torch.device("cpu")
     tracker = ResultTracker(algorithm="FedNova", experiment=experiment)
 
-    # Initialize global model
     global_model   = get_model(input_dim=input_dim).to(device)
     global_weights = get_model_weights(global_model)
     comm_cost      = compute_comm_cost(global_model, clients_per_round)
@@ -187,14 +170,12 @@ def run_fednova(
         print(f"{'='*60}")
 
     for round_num in range(1, num_rounds + 1):
-        # Select random clients
         selected = random.sample(range(len(client_loaders)), clients_per_round)
 
         normalized_updates = []
         client_sizes       = []
         tau_list           = []
 
-        # Local training — normalized updates
         for client_id in selected:
             local_model = get_model(input_dim=input_dim)
             local_model = set_model_weights(local_model, copy.deepcopy(global_weights))
@@ -210,13 +191,16 @@ def run_fednova(
             client_sizes.append(size)
             tau_list.append(tau)
 
-        # FedNova aggregation
-        global_weights = aggregate_nova(
-            global_weights, normalized_updates, client_sizes, tau_list
-        )
+        # Skip round if all clients had empty dataloaders
+        if all(t == 0 for t in tau_list):
+            pass
+        else:
+            global_weights = aggregate_nova(
+                global_weights, normalized_updates, client_sizes, tau_list
+            )
+
         global_model = set_model_weights(global_model, global_weights)
 
-        # Evaluate every 5 rounds and at round 1
         if round_num == 1 or round_num % 5 == 0:
             metrics = evaluate(global_model, test_loader, device)
             tracker.log(
@@ -225,7 +209,6 @@ def run_fednova(
                 extra={"comm_cost_mb": comm_cost * round_num},
             )
 
-    # Save results
     tracker.save()
 
     if verbose:
@@ -239,7 +222,7 @@ def run_fednova(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# QUICK TEST — 3 rounds only
+# QUICK TEST
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import sys
@@ -263,4 +246,4 @@ if __name__ == "__main__":
     )
 
     print(f"\nBest accuracy in 3 rounds: {tracker.get_best_accuracy()}%")
-    print("\n🎉 fednova.py is working correctly!")
+    print("\nfednova.py is working correctly!")

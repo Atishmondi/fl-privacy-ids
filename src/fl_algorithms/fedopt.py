@@ -24,14 +24,14 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
-NUM_ROUNDS        = 100
+NUM_ROUNDS        = 150
 CLIENTS_PER_ROUND = 10
 LOCAL_EPOCHS      = 5
 LEARNING_RATE     = 0.0005
 SERVER_LR         = 0.01
 BETA1             = 0.9
 BETA2             = 0.99
-TAU               = 1e-3   # stability constant
+TAU               = 1e-3
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -46,46 +46,34 @@ class ServerOptimizer:
 
     def __init__(self, global_weights: dict, lr: float = SERVER_LR,
                  beta1: float = BETA1, beta2: float = BETA2, tau: float = TAU):
-        self.lr      = lr
-        self.beta1   = beta1
-        self.beta2   = beta2
-        self.tau     = tau
-        self.t       = 0  # step counter
+        self.lr    = lr
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.tau   = tau
+        self.t     = 0
 
-        # Momentum buffers
         self.m = {k: torch.zeros_like(v) for k, v in global_weights.items()
                   if v.dtype == torch.float32}
         self.v = {k: torch.ones_like(v) * tau ** 2 for k, v in global_weights.items()
                   if v.dtype == torch.float32}
 
     def step(self, global_weights: dict, aggregated_weights: dict) -> dict:
-        """
-        Apply server Adam update.
-
-        pseudo_gradient = aggregated_weights - global_weights
-        new_global = global_weights + lr * Adam(pseudo_gradient)
-        """
         self.t += 1
         new_weights = copy.deepcopy(global_weights)
 
         for key in global_weights:
             if global_weights[key].dtype != torch.float32:
-                # Keep integer buffers (e.g. BatchNorm counters) as-is
                 new_weights[key] = aggregated_weights[key].clone()
                 continue
 
-            # Pseudo-gradient
             delta = aggregated_weights[key].float() - global_weights[key].float()
 
-            # Adam momentum update
             self.m[key] = self.beta1 * self.m[key] + (1 - self.beta1) * delta
             self.v[key] = self.beta2 * self.v[key] + (1 - self.beta2) * delta ** 2
 
-            # Bias correction
             m_hat = self.m[key] / (1 - self.beta1 ** self.t)
             v_hat = self.v[key] / (1 - self.beta2 ** self.t)
 
-            # Update global weights
             new_weights[key] = global_weights[key] + self.lr * m_hat / (
                 torch.sqrt(v_hat) + self.tau
             )
@@ -94,7 +82,7 @@ class ServerOptimizer:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FEDOPT AGGREGATION — weighted average then server optimizer step
+# FEDOPT AGGREGATION
 # ─────────────────────────────────────────────────────────────────────────────
 def aggregate_fedopt(
     global_weights: dict,
@@ -102,12 +90,7 @@ def aggregate_fedopt(
     client_sizes: list,
     server_opt: ServerOptimizer,
 ) -> dict:
-    """
-    FedOpt aggregation:
-    1. Weighted average of client weights (same as FedAvg)
-    2. Apply server-side Adam optimizer step
-    """
-    total_samples   = sum(client_sizes)
+    total_samples    = sum(client_sizes)
     averaged_weights = copy.deepcopy(client_weights[0])
 
     for key in averaged_weights:
@@ -121,9 +104,7 @@ def aggregate_fedopt(
             else:
                 averaged_weights[key] += w * weights[key].float()
 
-    # Server optimizer step
-    new_global = server_opt.step(global_weights, averaged_weights)
-    return new_global
+    return server_opt.step(global_weights, averaged_weights)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -142,30 +123,14 @@ def run_fedopt(
 ) -> ResultTracker:
     """
     Full FedOpt training loop.
-
-    Args:
-        client_loaders   : list of DataLoaders (one per client)
-        test_loader      : global test DataLoader
-        input_dim        : number of input features
-        num_rounds       : total FL rounds
-        clients_per_round: clients selected per round
-        local_epochs     : local training epochs per round
-        server_lr        : server-side Adam learning rate
-        experiment       : experiment name for result tracking
-        verbose          : print progress
-
-    Returns:
-        ResultTracker with full training history
     """
-    device  = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device  = torch.device("cpu")
     tracker = ResultTracker(algorithm="FedOpt", experiment=experiment)
 
-    # Initialize global model
-    global_model  = get_model(input_dim=input_dim).to(device)
-    global_weights= get_model_weights(global_model)
-    comm_cost     = compute_comm_cost(global_model, clients_per_round)
+    global_model   = get_model(input_dim=input_dim).to(device)
+    global_weights = get_model_weights(global_model)
+    comm_cost      = compute_comm_cost(global_model, clients_per_round)
 
-    # Initialize server optimizer
     server_opt = ServerOptimizer(global_weights, lr=server_lr)
 
     if verbose:
@@ -177,13 +142,11 @@ def run_fedopt(
         print(f"{'='*60}")
 
     for round_num in range(1, num_rounds + 1):
-        # Select random clients
         selected = random.sample(range(len(client_loaders)), clients_per_round)
 
         client_weights = []
         client_sizes   = []
 
-        # Local training — same as FedAvg
         for client_id in selected:
             local_model = get_model(input_dim=input_dim)
             local_model = set_model_weights(local_model, copy.deepcopy(global_weights))
@@ -196,13 +159,11 @@ def run_fedopt(
             client_weights.append(weights)
             client_sizes.append(size)
 
-        # Aggregate with server optimizer
         global_weights = aggregate_fedopt(
             global_weights, client_weights, client_sizes, server_opt
         )
         global_model = set_model_weights(global_model, global_weights)
 
-        # Evaluate every 5 rounds and at round 1
         if round_num == 1 or round_num % 5 == 0:
             metrics = evaluate(global_model, test_loader, device)
             tracker.log(
@@ -211,7 +172,6 @@ def run_fedopt(
                 extra={"comm_cost_mb": comm_cost * round_num},
             )
 
-    # Save results
     tracker.save()
 
     if verbose:
@@ -225,7 +185,7 @@ def run_fedopt(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# QUICK TEST — 3 rounds only
+# QUICK TEST
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import sys
@@ -250,4 +210,4 @@ if __name__ == "__main__":
     )
 
     print(f"\nBest accuracy in 3 rounds: {tracker.get_best_accuracy()}%")
-    print("\n🎉 fedopt.py is working correctly!")
+    print("\nfedopt.py is working correctly!")

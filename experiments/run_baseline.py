@@ -1,6 +1,6 @@
 """
 run_baseline.py — FL-Privacy-IDS
-Experiment 1: Baseline FL comparison (IID data, 100 rounds)
+Experiment 1: Baseline FL comparison (IID data, 150 rounds)
 Runs all 4 algorithms and saves results for paper.
 """
 
@@ -16,7 +16,6 @@ from src.fl_algorithms.fedprox import run_fedprox
 from src.fl_algorithms.fedopt import run_fedopt
 from src.fl_algorithms.fednova import run_fednova
 
-# ── Centralized baseline (Random Forest + XGBoost) ───────────────────────────
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -26,7 +25,7 @@ import xgboost as xgb
 import os
 
 # ── Config ────────────────────────────────────────────────────────────────────
-NUM_ROUNDS        = 100
+NUM_ROUNDS        = 150
 CLIENTS_PER_ROUND = 10
 LOCAL_EPOCHS      = 5
 EXPERIMENT        = "baseline_iid"
@@ -36,12 +35,10 @@ EXPERIMENT        = "baseline_iid"
 # CENTRALIZED BASELINE
 # ─────────────────────────────────────────────────────────────────────────────
 def run_centralized():
-    """Train Random Forest and XGBoost on full combined dataset."""
     print("\n" + "="*60)
     print("Running Centralized Baselines...")
     print("="*60)
 
-    # Load raw data
     train_df = pd.read_csv("data/unsw_nb15/UNSW_NB15_training-set.csv")
     test_df  = pd.read_csv("data/unsw_nb15/UNSW_NB15_testing-set.csv")
 
@@ -52,7 +49,6 @@ def run_centralized():
     train_df.drop(columns=drop_cols, inplace=True, errors="ignore")
     test_df.drop(columns=drop_cols,  inplace=True, errors="ignore")
 
-    # Encode categoricals
     for col in cat_cols:
         le = LabelEncoder()
         combined = pd.concat([train_df[col], test_df[col]]).astype(str)
@@ -71,10 +67,9 @@ def run_centralized():
 
     results = []
 
-    # Random Forest
     print("\nTraining Random Forest...")
-    start = time.time()
-    rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    start    = time.time()
+    rf       = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
     rf.fit(X_train, y_train)
     rf_preds = rf.predict(X_test)
     rf_time  = round(time.time() - start, 2)
@@ -82,17 +77,16 @@ def run_centralized():
     rf_f1    = round(f1_score(y_test, rf_preds, average="weighted") * 100, 4)
     print(f"Random Forest — Acc: {rf_acc}% | F1: {rf_f1}% | Time: {rf_time}s")
     results.append({
-        "algorithm"  : "RandomForest",
-        "experiment" : EXPERIMENT,
+        "algorithm"    : "RandomForest",
+        "experiment"   : EXPERIMENT,
         "best_accuracy": rf_acc,
-        "best_f1"    : rf_f1,
-        "type"       : "centralized",
-        "train_time" : rf_time,
+        "best_f1"      : rf_f1,
+        "type"         : "centralized",
+        "train_time"   : rf_time,
     })
 
-    # XGBoost
     print("\nTraining XGBoost...")
-    start = time.time()
+    start     = time.time()
     xgb_model = xgb.XGBClassifier(
         n_estimators=100, random_state=42,
         use_label_encoder=False, eval_metric="logloss",
@@ -105,23 +99,23 @@ def run_centralized():
     xgb_f1    = round(f1_score(y_test, xgb_preds, average="weighted") * 100, 4)
     print(f"XGBoost — Acc: {xgb_acc}% | F1: {xgb_f1}% | Time: {xgb_time}s")
     results.append({
-        "algorithm"  : "XGBoost",
-        "experiment" : EXPERIMENT,
+        "algorithm"    : "XGBoost",
+        "experiment"   : EXPERIMENT,
         "best_accuracy": xgb_acc,
-        "best_f1"    : xgb_f1,
-        "type"       : "centralized",
-        "train_time" : xgb_time,
+        "best_f1"      : xgb_f1,
+        "type"         : "centralized",
+        "train_time"   : xgb_time,
     })
 
     return results
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN — run all algorithms
+# MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 60)
-    print("EXPERIMENT 1 — Baseline FL (IID, 100 rounds)")
+    print("EXPERIMENT 1 — Baseline FL (IID, 150 rounds)")
     print("=" * 60)
     print(f"Rounds: {NUM_ROUNDS} | Clients/round: {CLIENTS_PER_ROUND}")
     print(f"Local epochs: {LOCAL_EPOCHS}")
@@ -129,14 +123,12 @@ if __name__ == "__main__":
     start_total = time.time()
     summaries   = []
 
-    # Load FL data (IID)
     print("\nLoading data...")
     client_loaders, test_loader, input_dim = get_fl_data(mode="iid")
 
-    # ── FedAvg ────────────────────────────────────────────────────────────────
     print("\n[1/4] Running FedAvg...")
-    start = time.time()
-    tracker_avg = run_fedavg(
+    start        = time.time()
+    tracker_avg  = run_fedavg(
         client_loaders    = client_loaders,
         test_loader       = test_loader,
         input_dim         = input_dim,
@@ -150,9 +142,8 @@ if __name__ == "__main__":
     summary["type"]       = "federated"
     summaries.append(summary)
 
-    # ── FedProx ───────────────────────────────────────────────────────────────
     print("\n[2/4] Running FedProx...")
-    start = time.time()
+    start        = time.time()
     tracker_prox = run_fedprox(
         client_loaders    = client_loaders,
         test_loader       = test_loader,
@@ -167,9 +158,8 @@ if __name__ == "__main__":
     summary["type"]       = "federated"
     summaries.append(summary)
 
-    # ── FedOpt ────────────────────────────────────────────────────────────────
     print("\n[3/4] Running FedOpt...")
-    start = time.time()
+    start       = time.time()
     tracker_opt = run_fedopt(
         client_loaders    = client_loaders,
         test_loader       = test_loader,
@@ -184,9 +174,8 @@ if __name__ == "__main__":
     summary["type"]       = "federated"
     summaries.append(summary)
 
-    # ── FedNova ───────────────────────────────────────────────────────────────
     print("\n[4/4] Running FedNova...")
-    start = time.time()
+    start        = time.time()
     tracker_nova = run_fednova(
         client_loaders    = client_loaders,
         test_loader       = test_loader,
@@ -201,14 +190,11 @@ if __name__ == "__main__":
     summary["type"]       = "federated"
     summaries.append(summary)
 
-    # ── Centralized Baselines ─────────────────────────────────────────────────
     centralized = run_centralized()
     summaries.extend(centralized)
 
-    # ── Save Summary ──────────────────────────────────────────────────────────
     save_summary(summaries, "baseline_summary.json")
 
-    # ── Print Final Table ─────────────────────────────────────────────────────
     total_time = round(time.time() - start_total, 2)
     print("\n" + "="*60)
     print("EXPERIMENT 1 RESULTS")
