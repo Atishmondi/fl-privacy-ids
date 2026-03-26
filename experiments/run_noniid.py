@@ -2,7 +2,7 @@
 run_noniid.py — FL-Privacy-IDS
 Experiment 2: Non-IID data distribution analysis
 Tests all 4 algorithms under Dirichlet non-IID splits
-with alpha = 0.1, 0.5, 1.0
+with alpha = 1.0, 0.5, 0.1
 """
 
 import sys
@@ -17,23 +17,18 @@ from src.fl_algorithms.fedopt import run_fedopt
 from src.fl_algorithms.fednova import run_fednova
 
 # ── Config ────────────────────────────────────────────────────────────────────
-NUM_ROUNDS        = 100
+NUM_ROUNDS        = 150
 CLIENTS_PER_ROUND = 10
 LOCAL_EPOCHS      = 5
-ALPHA_VALUES      = [0.1]  # high → low (easy → hard)
+ALPHA_VALUES      = [1.0, 0.5, 0.1]  # high → low (easy → hard)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# RUN ALL 4 ALGORITHMS FOR ONE ALPHA VALUE
-# ─────────────────────────────────────────────────────────────────────────────
 def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
-    """Run all 4 FL algorithms on Non-IID data with given alpha."""
     experiment = f"noniid_alpha{alpha}"
     summaries  = []
 
-    # FedAvg
     print(f"\n  [1/4] FedAvg (alpha={alpha})...")
-    start = time.time()
+    start   = time.time()
     tracker = run_fedavg(
         client_loaders    = client_loaders,
         test_loader       = test_loader,
@@ -48,9 +43,8 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     summary["train_time"] = round(time.time() - start, 2)
     summaries.append(summary)
 
-    # FedProx
     print(f"\n  [2/4] FedProx (alpha={alpha})...")
-    start = time.time()
+    start   = time.time()
     tracker = run_fedprox(
         client_loaders    = client_loaders,
         test_loader       = test_loader,
@@ -65,9 +59,8 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     summary["train_time"] = round(time.time() - start, 2)
     summaries.append(summary)
 
-    # FedOpt
     print(f"\n  [3/4] FedOpt (alpha={alpha})...")
-    start = time.time()
+    start   = time.time()
     tracker = run_fedopt(
         client_loaders    = client_loaders,
         test_loader       = test_loader,
@@ -82,9 +75,8 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     summary["train_time"] = round(time.time() - start, 2)
     summaries.append(summary)
 
-    # FedNova
     print(f"\n  [4/4] FedNova (alpha={alpha})...")
-    start = time.time()
+    start   = time.time()
     tracker = run_fednova(
         client_loaders    = client_loaders,
         test_loader       = test_loader,
@@ -102,9 +94,6 @@ def run_all_algorithms(client_loaders, test_loader, input_dim, alpha):
     return summaries
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 60)
     print("EXPERIMENT 2 — Non-IID Analysis")
@@ -132,10 +121,8 @@ if __name__ == "__main__":
         )
         all_summaries.extend(summaries)
 
-    # Save all results
     save_summary(all_summaries, "noniid_summary.json")
 
-    # Print final table
     total_time = round(time.time() - start_total, 2)
     print("\n" + "=" * 60)
     print("EXPERIMENT 2 RESULTS")
