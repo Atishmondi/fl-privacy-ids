@@ -38,7 +38,7 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-NUM_ROUNDS        = 100
+NUM_ROUNDS        = 150
 CLIENTS_PER_ROUND = 10
 LOCAL_EPOCHS      = 5
 LEARNING_RATE     = 0.0005
@@ -48,7 +48,7 @@ BETA1, BETA2, TAU = 0.9, 0.99, 1e-3
 DELTA             = 1e-5
 MAX_GRAD_NORM     = 1.0
 
-EPSILON_VALUES    = ["inf"]
+EPSILON_VALUES    = ["inf",10,1]
 ALGORITHMS        = ["FedAvg", "FedProx", "FedOpt", "FedNova"]
 
 DEVICE = torch.device("cpu")
